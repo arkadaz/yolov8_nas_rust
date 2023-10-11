@@ -10,3 +10,4 @@ cv-convert = "0.24.1"
 ndarray = "0.15.6"
 opencv = "0.85.1"
 ort = "1.16.2"
+tracing-subscriber = { version = "0.3", features = [ "env-filter", "fmt" ] }

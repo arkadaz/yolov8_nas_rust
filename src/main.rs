@@ -87,6 +87,9 @@ const YOLO_CLASSES: [&str; 80] = [
 ];
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     //init ONNX
+    tracing_subscriber::fmt::init();
+    let status = ExecutionProvider::CUDA(Default::default()).is_available();
+    println!("CUDA STATUS {:?}", status);
     let environment = Arc::new(
         Environment::builder()
             .with_name("YOLOV8")
