@@ -97,10 +97,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()?
             .into_arc(),
     );
+    // let model_name = "yolov8n.onnx";
+    let model_name = "yolo_nas_s.onnx";
     let model = SessionBuilder::new(&environment)?
         .with_optimization_level(GraphOptimizationLevel::Level3)?
-        .with_intra_threads(24)?
-        .with_model_from_file("yolov8n.onnx")
+        .with_intra_threads(12)?
+        .with_model_from_file(model_name)
         .unwrap();
     //opencv
     let window = "video capture";
@@ -144,15 +146,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let input_as_values = &input.as_standard_layout();
         let model_inputs = vec![Value::from_array(model.allocator(), input_as_values).unwrap()];
         let outputs = model.run(model_inputs)?;
-        let output = outputs
-            .get(0)
-            .unwrap()
-            .try_extract::<f32>()
-            .unwrap()
-            .view()
-            .t()
-            .into_owned();
-        let results = process_output(output, 640, 640);
+
+        let results = if model_name == "yolov8.onnx" {
+            let output = outputs
+                .get(0)
+                .unwrap()
+                .try_extract::<f32>()
+                .unwrap()
+                .view()
+                .t()
+                .into_owned();
+            let results = process_output_yolov8(output, 640, 640);
+            results
+        } else {
+            let output_bbox = outputs
+                .get(0)
+                .unwrap()
+                .try_extract::<f32>()
+                .unwrap()
+                .view()
+                .t()
+                .into_owned();
+            let output_class = outputs
+                .get(1)
+                .unwrap()
+                .try_extract::<f32>()
+                .unwrap()
+                .view()
+                .t()
+                .into_owned();
+
+            let mut output =
+                ndarray::concatenate(Axis(0), &[output_bbox.view(), output_class.view()]).unwrap();
+            output.swap_axes(0, 1);
+            let results = process_output_yolonas(output, 640, 640);
+            results
+        };
+
         for result in results {
             let rec = opencv::core::Rect::new(
                 result.0 as i32,
@@ -223,7 +253,7 @@ fn intersection(
     return (x2 - x1) * (y2 - y1);
 }
 
-fn process_output(
+fn process_output_yolov8(
     output: Array<f32, IxDyn>,
     img_width: u32,
     img_height: u32,
@@ -251,6 +281,50 @@ fn process_output(
         let x2 = xc + w / 2.0;
         let y1 = yc - h / 2.0;
         let y2 = yc + h / 2.0;
+        boxes.push((x1, y1, x2, y2, label, prob));
+    }
+
+    boxes.sort_by(|box1, box2| box2.5.total_cmp(&box1.5));
+    let mut result = Vec::new();
+    while boxes.len() > 0 {
+        result.push(boxes[0]);
+        boxes = boxes
+            .iter()
+            .filter(|box1| iou(&boxes[0], box1) < 0.7)
+            .map(|x| *x)
+            .collect()
+    }
+    return result;
+}
+
+fn process_output_yolonas(
+    output: Array<f32, IxDyn>,
+    img_width: u32,
+    img_height: u32,
+) -> Vec<(f32, f32, f32, f32, &'static str, f32)> {
+    let mut boxes = Vec::new();
+    let output = output.slice(s![.., .., 0]);
+    for row in output.axis_iter(Axis(0)) {
+        let row: Vec<_> = row.iter().map(|x| *x).collect();
+        let (class_id, prob) = row
+            .iter()
+            .skip(4)
+            .enumerate()
+            .map(|(index, value)| (index, *value))
+            .reduce(|accum, row| if row.1 > accum.1 { row } else { accum })
+            .unwrap();
+        if prob < 0.5 {
+            continue;
+        }
+        let label = YOLO_CLASSES[class_id];
+        let xc = row[0] / 640.0 * (img_width as f32);
+        let yc = row[1] / 640.0 * (img_height as f32);
+        let w = row[2] / 640.0 * (img_width as f32);
+        let h = row[3] / 640.0 * (img_height as f32);
+        let x1 = xc;
+        let x2 = w;
+        let y1 = yc;
+        let y2 = h;
         boxes.push((x1, y1, x2, y2, label, prob));
     }
 
