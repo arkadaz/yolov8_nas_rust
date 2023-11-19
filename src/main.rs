@@ -1,4 +1,5 @@
 use ndarray::prelude::*;
+extern crate num_cpus;
 use opencv::{core, highgui, prelude::*, videoio, Result};
 use ort::{Environment, ExecutionProvider, GraphOptimizationLevel, SessionBuilder, Value};
 use std::{sync::Arc, vec};
@@ -101,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_name = "yolo_nas_s.onnx";
     let model = SessionBuilder::new(&environment)?
         .with_optimization_level(GraphOptimizationLevel::Level3)?
-        .with_intra_threads(12)?
+        .with_intra_threads(num_cpus::get() as i16)?
         .with_model_from_file(model_name)
         .unwrap();
     //opencv
@@ -143,6 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 input[[0, 2, i, j]] = (pixel[2] as f32) / 255.0;
             }
         }
+
         let input_as_values = &input.as_standard_layout();
         let model_inputs = vec![Value::from_array(model.allocator(), input_as_values).unwrap()];
         let outputs = model.run(model_inputs)?;

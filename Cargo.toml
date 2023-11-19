@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 ndarray = "0.15.6"
 opencv = "0.86.0"
-ort = { version = "1.16.2", features = ["download-binaries"] }
+ort = { version = "1.16.2", features = ["cuda"] }
+num_cpus = "1.16.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
